@@ -1,0 +1,44 @@
+{
+	"name": "ralphlike",
+	"version": "1.0.0",
+	"description": "AI coding loop CLI tool implementing the Ralph method",
+	"type": "module",
+	"main": "dist/cli.js",
+	"bin": {
+		"rl": "dist/cli.js"
+	},
+	"scripts": {
+		"build": "tsup src/cli.ts --format esm --dts --clean",
+		"dev": "tsup src/cli.ts --format esm --watch",
+		"lint": "biome check .",
+		"lint:fix": "biome check . --write",
+		"format": "biome format . --write",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "npm run build"
+	},
+	"keywords": ["ai", "coding", "loop", "ralph", "cli", "claude", "opencode", "cursor", "codex"],
+	"author": "Simón Gomes",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/simonw/ralphlike.git"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	},
+	"files": ["dist"],
+	"dependencies": {
+		"chalk": "^5.3.0",
+		"commander": "^12.1.0",
+		"inquirer": "^9.3.7",
+		"ora": "^8.1.1",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"@types/inquirer": "^9.0.7",
+		"@types/node": "^22.10.5",
+		"tsup": "^8.3.5",
+		"typescript": "^5.7.3"
+	}
+}

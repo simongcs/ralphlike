@@ -186,7 +186,7 @@ Disable for a single run with `--no-commit`.
 |------|---------|-------|
 | claude-code | `claude` | Anthropic's Claude Code CLI |
 | opencode | `opencode` | OpenCode CLI |
-| cursor | `cursor` | Cursor editor CLI |
+| cursor | `agent` | Cursor editor CLI |
 | codex | `codex` | OpenAI Codex CLI |
 
 Custom tool templates can be configured in `rl.config.json`.

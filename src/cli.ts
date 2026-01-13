@@ -6,6 +6,7 @@ import { runInit } from "./commands/init.js";
 import { getToolConfig, loadConfig } from "./config/index.js";
 import { runLoop } from "./loop/index.js";
 import { getAdapter, getAvailableTools } from "./tools/index.js";
+import { createCombinedPrompt } from "./utils/prompt.js";
 
 const program = new Command();
 
@@ -24,6 +25,7 @@ program
 	.option("--no-commit", "Disable auto-commit")
 	.option("--dry-run", "Show what would run without executing")
 	.option("-v, --verbose", "Verbose output")
+	.option("-D, --debug-prompt", "Print the full prompt and exit")
 	.action(async (promptFile, options) => {
 		if (!promptFile) {
 			console.log("Usage: rl <prompt-file> [options]");
@@ -63,6 +65,22 @@ program
 				console.log(chalk.dim("─".repeat(40)));
 				console.log(`  Command:        ${chalk.yellow(command)}`);
 				console.log();
+			}
+
+			if (options.debugPrompt) {
+				const sessionName = options.name || "debug-session";
+				const combined = createCombinedPrompt(promptFile, {
+					includeSystemPrompt: true,
+					sessionName,
+				});
+
+				// Read and print the combined prompt
+				const { readFileSync } = await import("node:fs");
+				const content = readFileSync(combined.filePath, "utf-8");
+				console.log(content);
+
+				combined.cleanup();
+				return;
 			}
 
 			if (options.dryRun) {

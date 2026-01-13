@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { deriveSessionName, generateChecklist, parsePromptFile } from "../utils/prompt.js";
+import { deriveSessionName } from "../utils/prompt.js";
 
 export interface SessionInfo {
 	name: string;
@@ -68,11 +68,8 @@ export class SessionManager {
 		const promptCopyPath = join(finalSessionDir, "prompt.md");
 		copyFileSync(absolutePromptPath, promptCopyPath);
 
-		// Parse prompt and create checklist
-		const parsed = parsePromptFile(absolutePromptPath);
-		const checklistContent = generateChecklist(parsed.tasks);
+		// Checklist will be created by the agent on first run
 		const checklistPath = join(finalSessionDir, "checklist.md");
-		writeFileSync(checklistPath, checklistContent, "utf-8");
 
 		// Create empty progress file
 		const progressPath = join(finalSessionDir, "progress.md");

@@ -8,7 +8,7 @@
 		"rl": "dist/cli.js"
 	},
 	"scripts": {
-		"build": "tsup src/cli.ts --format esm --dts --clean",
+		"build": "tsup src/cli.ts --format esm --dts --clean && cp -r src/prompts dist/",
 		"dev": "tsup src/cli.ts --format esm --watch",
 		"lint": "biome check .",
 		"lint:fix": "biome check . --write",

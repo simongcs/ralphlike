@@ -74,7 +74,7 @@ export abstract class BaseToolAdapter implements ToolAdapter {
 
 		// Replace command name with full path in the template
 		const commandName = this.getCommandName();
-		command = command.replace(new RegExp(`\\b${commandName}\\b`, 'g'), commandPath);
+		command = command.replace(new RegExp(`\\b${commandName}\\b`, "g"), commandPath);
 
 		command = command.replace(/\{promptFile\}/g, absolutePath);
 
@@ -91,31 +91,17 @@ export abstract class BaseToolAdapter implements ToolAdapter {
 		const startTime = Date.now();
 
 		return new Promise((resolve) => {
+			// Use full inherit for interactive tools (Claude Code needs TTY access)
 			const child = spawn("sh", ["-c", command], {
-				stdio: ["inherit", "pipe", "pipe"],
+				stdio: ["inherit", "inherit", "inherit"],
 				cwd: process.cwd(),
-			});
-
-			let stdout = "";
-			let stderr = "";
-
-			child.stdout?.on("data", (data) => {
-				const text = data.toString();
-				stdout += text;
-				process.stdout.write(text);
-			});
-
-			child.stderr?.on("data", (data) => {
-				const text = data.toString();
-				stderr += text;
-				process.stderr.write(text);
 			});
 
 			child.on("close", (code) => {
 				resolve({
 					exitCode: code ?? 1,
-					stdout,
-					stderr,
+					stdout: "",
+					stderr: "",
 					duration: Date.now() - startTime,
 				});
 			});
@@ -123,8 +109,8 @@ export abstract class BaseToolAdapter implements ToolAdapter {
 			child.on("error", (error) => {
 				resolve({
 					exitCode: 1,
-					stdout,
-					stderr: stderr + error.message,
+					stdout: "",
+					stderr: error.message,
 					duration: Date.now() - startTime,
 				});
 			});
@@ -138,7 +124,7 @@ export abstract class BaseToolAdapter implements ToolAdapter {
 		return new Promise((resolve) => {
 			const child = spawn(command, args, {
 				stdio: ["ignore", "pipe", "pipe"],
-				env: process.env
+				env: process.env,
 			});
 
 			let stdout = "";

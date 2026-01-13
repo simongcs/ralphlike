@@ -1,9 +1,20 @@
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export interface ParsedPrompt {
 	content: string;
 	tasks: string[];
+}
+
+export interface CombinedPrompt {
+	filePath: string;
+	cleanup: () => void;
 }
 
 export function parsePromptFile(filePath: string): ParsedPrompt {
@@ -82,4 +93,66 @@ export function updateChecklistItem(
 	}
 
 	return lines.join("\n");
+}
+
+export interface CombinedPromptOptions {
+	includeSystemPrompt?: boolean;
+	sessionName?: string;
+}
+
+/**
+ * Combines the system prompt with a user prompt file and creates a temporary file
+ * @param userPromptFile Path to the user's prompt file
+ * @param options Configuration options (includeSystemPrompt, sessionName)
+ * @returns Object containing the path to the combined prompt file and a cleanup function
+ */
+export function createCombinedPrompt(
+	userPromptFile: string,
+	options: CombinedPromptOptions | boolean = {},
+): CombinedPrompt {
+	// Handle legacy boolean parameter for backwards compatibility
+	const opts: CombinedPromptOptions =
+		typeof options === "boolean" ? { includeSystemPrompt: options } : options;
+
+	const { includeSystemPrompt = true, sessionName } = opts;
+
+	// Read user prompt
+	const userPrompt = readFileSync(userPromptFile, "utf-8");
+
+	let combinedContent = userPrompt;
+
+	if (includeSystemPrompt) {
+		// Find the system prompt file (in dist/prompts after build)
+		const systemPromptPath = join(__dirname, "prompts", "system-prompt.md");
+
+		if (existsSync(systemPromptPath)) {
+			let systemPrompt = readFileSync(systemPromptPath, "utf-8");
+
+			// Replace {session} placeholder with actual session name
+			if (sessionName) {
+				systemPrompt = systemPrompt.replace(/\{session\}/g, sessionName);
+			}
+
+			// Combine: system prompt first, then user prompt
+			combinedContent = `${systemPrompt}\n\n${userPrompt}`;
+		}
+	}
+
+	// Create temporary file
+	const tempDir = mkdtempSync(join(tmpdir(), "rl-prompt-"));
+	const tempFile = join(tempDir, "combined-prompt.md");
+	writeFileSync(tempFile, combinedContent, "utf-8");
+
+	// Return the file path and cleanup function
+	return {
+		filePath: tempFile,
+		cleanup: () => {
+			try {
+				// Clean up temp file and directory
+				rmSync(tempDir, { recursive: true, force: true });
+			} catch {
+				// Ignore cleanup errors
+			}
+		},
+	};
 }

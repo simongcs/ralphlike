@@ -6,6 +6,7 @@ import { commit, formatCommitMessage, getGitStatus, isGitRepository } from "../g
 import { type SessionInfo, SessionManager } from "../session/manager.js";
 import { ProgressWriter, getFilesChangedCount, getGitDiffSummary } from "../session/progress.js";
 import { type ExecutionResult, getAdapter } from "../tools/index.js";
+import { createCombinedPrompt } from "../utils/prompt.js";
 import { type HookEnvironment, HookExecutor } from "./hooks.js";
 import { type StopCheckContext, checkStopConditions, runStopHook } from "./stop.js";
 
@@ -110,153 +111,164 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 
 	const hookExecutor = new HookExecutor(config.hooks, baseHookEnv);
 
-	// Build command
-	const command = await adapter.buildCommand(promptFile, toolConfig, effectiveModel);
+	// Create combined prompt (system prompt + user prompt)
+	const combinedPrompt = createCombinedPrompt(promptFile, {
+		includeSystemPrompt: true,
+		sessionName: session.name,
+	});
 
-	let iteration = 0;
-	let stopReason = "unknown";
-	let lastOutput = "";
+	try {
+		// Build command using the combined prompt file
+		const command = await adapter.buildCommand(combinedPrompt.filePath, toolConfig, effectiveModel);
 
-	// Main loop
-	while (iteration < config.maxIterations) {
-		iteration++;
+		let iteration = 0;
+		let stopReason = "unknown";
+		let lastOutput = "";
 
-		const spinner = ora(`Iteration ${iteration}/${config.maxIterations}`).start();
+		// Main loop
+		while (iteration < config.maxIterations) {
+			iteration++;
 
-		// Run pre-iteration hook
-		await hookExecutor.runPreIteration(iteration);
+			const spinner = ora(`Iteration ${iteration}/${config.maxIterations}`).start();
 
-		// Execute the tool
-		let result: ExecutionResult;
-		let retried = false;
+			// Run pre-iteration hook
+			await hookExecutor.runPreIteration(iteration);
 
-		try {
-			spinner.text = `Iteration ${iteration}/${config.maxIterations} - Running ${toolName}...`;
-			spinner.stop();
-			console.log(chalk.cyan(`\n━━━ Iteration ${iteration} ━━━\n`));
+			// Execute the tool
+			let result: ExecutionResult;
+			let retried = false;
 
-			result = await adapter.execute(command);
-			lastOutput = result.stdout + result.stderr;
+			try {
+				spinner.text = `Iteration ${iteration}/${config.maxIterations} - Running ${toolName}...`;
+				spinner.stop();
+				console.log(chalk.cyan(`\n━━━ Iteration ${iteration} ━━━\n`));
 
-			// Handle errors based on strategy
-			if (result.exitCode !== 0) {
-				if (config.errorHandling.strategy === "retry-once" && !retried) {
-					console.log(chalk.yellow(`\nRetrying iteration ${iteration}...`));
+				result = await adapter.execute(command);
+				lastOutput = result.stdout + result.stderr;
 
-					// Run error hook
-					await hookExecutor.runOnError(iteration, result.exitCode);
-
-					retried = true;
-					result = await adapter.execute(command);
-					lastOutput = result.stdout + result.stderr;
-				}
-
+				// Handle errors based on strategy
 				if (result.exitCode !== 0) {
-					if (config.errorHandling.strategy === "stop") {
+					if (config.errorHandling.strategy === "retry-once" && !retried) {
+						console.log(chalk.yellow(`\nRetrying iteration ${iteration}...`));
+
+						// Run error hook
 						await hookExecutor.runOnError(iteration, result.exitCode);
-						stopReason = `Error on iteration ${iteration} (exit code ${result.exitCode})`;
-						break;
+
+						retried = true;
+						result = await adapter.execute(command);
+						lastOutput = result.stdout + result.stderr;
 					}
-					// strategy === "continue" - just log and continue
-					console.log(
-						chalk.yellow(`\nIteration ${iteration} failed with exit code ${result.exitCode}`),
-					);
+
+					if (result.exitCode !== 0) {
+						if (config.errorHandling.strategy === "stop") {
+							await hookExecutor.runOnError(iteration, result.exitCode);
+							stopReason = `Error on iteration ${iteration} (exit code ${result.exitCode})`;
+							break;
+						}
+						// strategy === "continue" - just log and continue
+						console.log(
+							chalk.yellow(`\nIteration ${iteration} failed with exit code ${result.exitCode}`),
+						);
+					}
+				}
+			} catch (error) {
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				console.error(chalk.red(`\nExecution error: ${errorMsg}`));
+				stopReason = `Execution error: ${errorMsg}`;
+				break;
+			}
+
+			// Record progress
+			const filesChanged = await getFilesChangedCount();
+			const diffSummary = await getGitDiffSummary();
+
+			progressWriter.appendIteration({
+				iteration,
+				timestamp: new Date(),
+				status: retried ? "retried" : result.exitCode === 0 ? "completed" : "failed",
+				duration: result.duration,
+				exitCode: result.exitCode,
+				filesChanged,
+				diffSummary,
+			});
+
+			// Run post-iteration hook
+			await hookExecutor.runPostIteration(iteration, result.exitCode);
+
+			// Auto-commit per iteration if enabled
+			if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "per-iteration") {
+				await performCommit(iteration, session.name, config.git.commitMessageTemplate, toolName);
+			}
+
+			console.log(
+				chalk.dim(
+					`\n━━━ Iteration ${iteration} complete (${(result.duration / 1000).toFixed(1)}s) ━━━\n`,
+				),
+			);
+
+			// Check stop conditions
+			const stopContext: StopCheckContext = {
+				iteration,
+				maxIterations: config.maxIterations,
+				output: lastOutput,
+				workingDir: process.cwd(),
+			};
+
+			const stopResult = checkStopConditions(config.stopConditions, stopContext);
+			if (stopResult.shouldStop) {
+				stopReason = stopResult.reason || "Stop condition met";
+				break;
+			}
+
+			// Check stop hook
+			if (config.stopConditions.hook.enabled && config.stopConditions.hook.command) {
+				const hookEnv: Record<string, string> = {
+					RL_ITERATION: String(iteration),
+					RL_SESSION_NAME: session.name,
+					RL_PROMPT_FILE: session.promptFile,
+					RL_SESSION_DIR: session.dir,
+					RL_EXIT_CODE: String(result.exitCode),
+				};
+
+				const hookResult = await runStopHook(config.stopConditions.hook.command, hookEnv);
+				if (hookResult.shouldStop) {
+					stopReason = hookResult.reason || "Stop hook triggered";
+					break;
 				}
 			}
-		} catch (error) {
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			console.error(chalk.red(`\nExecution error: ${errorMsg}`));
-			stopReason = `Execution error: ${errorMsg}`;
-			break;
 		}
 
-		// Record progress
-		const filesChanged = await getFilesChangedCount();
-		const diffSummary = await getGitDiffSummary();
+		// If we exited the loop normally (reached max iterations)
+		if (iteration >= config.maxIterations && stopReason === "unknown") {
+			stopReason = `Reached max iterations (${config.maxIterations})`;
+		}
 
-		progressWriter.appendIteration({
-			iteration,
-			timestamp: new Date(),
-			status: retried ? "retried" : result.exitCode === 0 ? "completed" : "failed",
-			duration: result.duration,
-			exitCode: result.exitCode,
-			filesChanged,
-			diffSummary,
-		});
-
-		// Run post-iteration hook
-		await hookExecutor.runPostIteration(iteration, result.exitCode);
-
-		// Auto-commit per iteration if enabled
-		if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "per-iteration") {
+		// Auto-commit on stop if enabled
+		if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "on-stop") {
 			await performCommit(iteration, session.name, config.git.commitMessageTemplate, toolName);
 		}
 
-		console.log(
-			chalk.dim(
-				`\n━━━ Iteration ${iteration} complete (${(result.duration / 1000).toFixed(1)}s) ━━━\n`,
-			),
-		);
+		// Write summary
+		progressWriter.writeSummary({
+			totalIterations: iteration,
+			stopReason,
+			totalDuration: progressWriter.getElapsedTime(),
+		});
 
-		// Check stop conditions
-		const stopContext: StopCheckContext = {
-			iteration,
-			maxIterations: config.maxIterations,
-			output: lastOutput,
-			workingDir: process.cwd(),
+		// Run completion hook
+		await hookExecutor.runOnComplete(iteration, stopReason);
+
+		console.log(chalk.green(`\n✓ Session complete: ${stopReason}`));
+		console.log(chalk.dim(`  Progress: ${session.progressFile}`));
+
+		return {
+			totalIterations: iteration,
+			stopReason,
+			session,
+			success: true,
 		};
-
-		const stopResult = checkStopConditions(config.stopConditions, stopContext);
-		if (stopResult.shouldStop) {
-			stopReason = stopResult.reason || "Stop condition met";
-			break;
-		}
-
-		// Check stop hook
-		if (config.stopConditions.hook.enabled && config.stopConditions.hook.command) {
-			const hookEnv: Record<string, string> = {
-				RL_ITERATION: String(iteration),
-				RL_SESSION_NAME: session.name,
-				RL_PROMPT_FILE: session.promptFile,
-				RL_SESSION_DIR: session.dir,
-				RL_EXIT_CODE: String(result.exitCode),
-			};
-
-			const hookResult = await runStopHook(config.stopConditions.hook.command, hookEnv);
-			if (hookResult.shouldStop) {
-				stopReason = hookResult.reason || "Stop hook triggered";
-				break;
-			}
-		}
+	} finally {
+		// Always clean up combined prompt file
+		combinedPrompt.cleanup();
 	}
-
-	// If we exited the loop normally (reached max iterations)
-	if (iteration >= config.maxIterations && stopReason === "unknown") {
-		stopReason = `Reached max iterations (${config.maxIterations})`;
-	}
-
-	// Auto-commit on stop if enabled
-	if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "on-stop") {
-		await performCommit(iteration, session.name, config.git.commitMessageTemplate, toolName);
-	}
-
-	// Write summary
-	progressWriter.writeSummary({
-		totalIterations: iteration,
-		stopReason,
-		totalDuration: progressWriter.getElapsedTime(),
-	});
-
-	// Run completion hook
-	await hookExecutor.runOnComplete(iteration, stopReason);
-
-	console.log(chalk.green(`\n✓ Session complete: ${stopReason}`));
-	console.log(chalk.dim(`  Progress: ${session.progressFile}`));
-
-	return {
-		totalIterations: iteration,
-		stopReason,
-		session,
-		success: true,
-	};
 }

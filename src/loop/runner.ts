@@ -2,10 +2,15 @@ import chalk from "chalk";
 import ora from "ora";
 import { formatModelForTool, getToolConfig } from "../config/defaults.js";
 import type { Config } from "../config/schema.js";
-import { commit, formatCommitMessage, getGitStatus, isGitRepository } from "../git/index.js";
+import { commit, getGitStatus, isGitRepository, parseCommitMessage } from "../git/index.js";
 import { type SessionInfo, SessionManager } from "../session/manager.js";
 import { ProgressWriter, getFilesChangedCount, getGitDiffSummary } from "../session/progress.js";
-import { type ExecutionResult, type TokenUsage, getAdapter, getTokenParser } from "../tools/index.js";
+import {
+	type ExecutionResult,
+	type TokenUsage,
+	getAdapter,
+	getTokenParser,
+} from "../tools/index.js";
 import { createCombinedPrompt } from "../utils/prompt.js";
 import { type HookEnvironment, HookExecutor } from "./hooks.js";
 import { type StopCheckContext, checkStopConditions, runStopHook } from "./stop.js";
@@ -36,8 +41,7 @@ function accumulateTokens(total: TokenUsage, iteration: TokenUsage): TokenUsage 
 			iteration.cacheWriteTokens !== undefined
 				? (total.cacheWriteTokens || 0) + iteration.cacheWriteTokens
 				: total.cacheWriteTokens,
-		cost:
-			iteration.cost !== undefined ? (total.cost || 0) + iteration.cost : total.cost,
+		cost: iteration.cost !== undefined ? (total.cost || 0) + iteration.cost : total.cost,
 	};
 }
 
@@ -58,30 +62,38 @@ export interface RunResult {
 	success: boolean;
 }
 
+interface PerformCommitResult {
+	committed: boolean;
+	message?: string;
+	hash?: string;
+}
+
 async function performCommit(
+	commitMessage: string | undefined,
 	iteration: number,
 	sessionName: string,
-	template: string,
-	tool: string,
-): Promise<void> {
+): Promise<PerformCommitResult> {
 	const status = await getGitStatus();
 	if (!status.hasChanges) {
-		return;
+		return { committed: false };
 	}
 
-	const message = formatCommitMessage(template, {
-		iteration,
-		sessionName,
-		tool,
-	});
+	// Use the parsed commit message or fall back to a default
+	const message = commitMessage || `chore(rl): iteration ${iteration} - ${sessionName}`;
 
 	const result = await commit({ message, addAll: true });
 
 	if (result.success) {
 		console.log(chalk.dim(`  Committed: ${result.commitHash?.slice(0, 7) || "done"}`));
-	} else if (result.error !== "No changes to commit") {
+		console.log(chalk.dim(`  Message: ${message}`));
+		return { committed: true, message, hash: result.commitHash };
+	}
+
+	if (result.error !== "No changes to commit") {
 		console.log(chalk.yellow(`  Commit skipped: ${result.error}`));
 	}
+
+	return { committed: false };
 }
 
 export async function runLoop(options: RunOptions): Promise<RunResult> {
@@ -168,6 +180,7 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 		let stopReason = "unknown";
 		let lastOutput = "";
 		let totalTokens: TokenUsage = {};
+		let lastParsedCommitMessage: string | undefined;
 
 		// Main loop
 		while (iteration < config.maxIterations) {
@@ -228,6 +241,19 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 				totalTokens = accumulateTokens(totalTokens, iterationTokens);
 			}
 
+			// Parse commit message from AI output
+			const parsedCommitMessage = parseCommitMessage(lastOutput);
+			lastParsedCommitMessage = parsedCommitMessage;
+
+			// Auto-commit per iteration if enabled
+			let commitMessage: string | undefined;
+			if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "per-iteration") {
+				const commitResult = await performCommit(parsedCommitMessage, iteration, session.name);
+				if (commitResult.committed) {
+					commitMessage = commitResult.message;
+				}
+			}
+
 			// Record progress
 			const filesChanged = await getFilesChangedCount();
 			const diffSummary = await getGitDiffSummary();
@@ -241,15 +267,11 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 				filesChanged,
 				diffSummary,
 				tokens: iterationTokens || undefined,
+				commitMessage,
 			});
 
 			// Run post-iteration hook
 			await hookExecutor.runPostIteration(iteration, result.exitCode);
-
-			// Auto-commit per iteration if enabled
-			if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "per-iteration") {
-				await performCommit(iteration, session.name, config.git.commitMessageTemplate, toolName);
-			}
 
 			console.log(
 				chalk.dim(
@@ -296,7 +318,7 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 
 		// Auto-commit on stop if enabled
 		if (shouldAutoCommit && isGitRepo && config.git.commitStrategy === "on-stop") {
-			await performCommit(iteration, session.name, config.git.commitMessageTemplate, toolName);
+			await performCommit(lastParsedCommitMessage, iteration, session.name);
 		}
 
 		// Write summary (include total tokens if we captured any)

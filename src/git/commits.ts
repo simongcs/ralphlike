@@ -160,3 +160,34 @@ export async function getDiffStats(): Promise<
 		deletions: deletionsMatch ? Number.parseInt(deletionsMatch[1], 10) : 0,
 	};
 }
+
+/**
+ * Parse a conventional commit message from AI tool output.
+ * Looks for the pattern: COMMIT_MSG: <type>(<scope>): <description>
+ * @param output The stdout/stderr from the AI tool
+ * @returns The commit message if found, undefined otherwise
+ */
+export function parseCommitMessage(output: string): string | undefined {
+	// Match COMMIT_MSG: followed by a conventional commit format
+	// Pattern: COMMIT_MSG: type(scope): description or COMMIT_MSG: type: description
+	const commitMsgPattern = /COMMIT_MSG:\s*(.+?)(?:\n|$)/i;
+	const match = output.match(commitMsgPattern);
+
+	if (!match) {
+		return undefined;
+	}
+
+	const message = match[1].trim();
+
+	// Validate it looks like a conventional commit
+	// Should start with a type like feat, fix, docs, etc.
+	const conventionalPattern =
+		/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore)(\(.+?\))?!?:\s*.+/i;
+	if (conventionalPattern.test(message)) {
+		return message;
+	}
+
+	// If it doesn't match conventional format, still return it but log a warning
+	// This allows flexibility while encouraging the format
+	return message;
+}

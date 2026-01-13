@@ -37,7 +37,7 @@ export const ErrorHandlingSchema = z.object({
 export const GitConfigSchema = z.object({
 	autoCommit: z.boolean().default(false),
 	commitStrategy: z.enum(["per-iteration", "on-stop"]).default("per-iteration"),
-	commitMessageTemplate: z.string().default("rl: iteration {iteration} - {sessionName}"),
+	commitMessageTemplate: z.string().default("chore(rl): iteration {iteration} - {sessionName}"),
 });
 
 export const SessionConfigSchema = z.object({

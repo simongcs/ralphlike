@@ -4,6 +4,7 @@ export {
 	getGitStatus,
 	getDiffStats,
 	isGitRepository,
+	parseCommitMessage,
 	stageAll,
 	type CommitOptions,
 	type CommitResult,

@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
-import type { SessionInfo } from "./manager.js";
 import type { TokenUsage } from "../tools/tokens.js";
 import { formatTokenUsage } from "../tools/tokens.js";
+import type { SessionInfo } from "./manager.js";
 
 export interface ProgressHeader {
 	sessionName: string;
@@ -21,6 +21,7 @@ export interface IterationProgress {
 	diffSummary?: string;
 	exitCode: number;
 	tokens?: TokenUsage;
+	commitMessage?: string;
 }
 
 export interface SessionSummary {
@@ -91,6 +92,10 @@ export class ProgressWriter {
 
 		if (progress.diffSummary) {
 			lines.push(`- Git diff: ${progress.diffSummary}`);
+		}
+
+		if (progress.commitMessage) {
+			lines.push(`- Commit: \`${progress.commitMessage}\``);
 		}
 
 		lines.push("");

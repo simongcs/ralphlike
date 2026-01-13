@@ -127,7 +127,7 @@ Creates `rl.config.json` with interactive prompts for:
   "git": {
     "autoCommit": false,
     "commitStrategy": "per-iteration",
-    "commitMessageTemplate": "rl: iteration {iteration} - {sessionName}"
+    "commitMessageTemplate": "chore(rl): iteration {iteration} - {sessionName}"
   },
 
   "session": {
@@ -163,7 +163,7 @@ Enable auto-commit in config or use `rl init`:
   "git": {
     "autoCommit": true,
     "commitStrategy": "per-iteration",
-    "commitMessageTemplate": "rl: iteration {iteration} - {sessionName}"
+    "commitMessageTemplate": "chore(rl): iteration {iteration} - {sessionName}"
   }
 }
 ```
@@ -171,6 +171,8 @@ Enable auto-commit in config or use `rl init`:
 Strategies:
 - `per-iteration` - Commit after each iteration
 - `on-stop` - Single commit when session ends
+
+**Conventional Commits**: The AI agent outputs a conventional commit message (e.g., `feat(auth): add login validation`) at the end of each iteration. This message is used for the git commit and saved in `progress.md`. If no commit message is detected, the `commitMessageTemplate` is used as a fallback.
 
 Disable for a single run with `--no-commit`.
 

@@ -130,7 +130,6 @@ rl <command> --help
   "git": {
     "autoCommit": false,
     "commitStrategy": "per-iteration",
-    "commitMessageTemplate": "rl: iteration {iteration} - {sessionName}"
   },
 
   "session": {

@@ -138,20 +138,6 @@ Stop conditions are evaluated in order after each iteration:
 2. **outputPattern** - Stop when agent output matches regex
 3. **hook** - Stop when custom script returns exit code 0
 
-### Lifecycle Hooks
-
-Hooks receive context via environment variables:
-
-```bash
-RL_ITERATION=3
-RL_SESSION_NAME=auth
-RL_PROMPT_FILE=/path/to/prompt.md
-RL_SESSION_DIR=/path/to/.ralph/auth
-RL_EXIT_CODE=0
-RL_TOOL=claude-code
-RL_MODEL=claude-sonnet-4-20250514
-```
-
 ### Error Handling Strategies
 
 | Strategy | Behavior |

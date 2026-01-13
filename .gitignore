@@ -28,3 +28,5 @@ npm-debug.log*
 
 # Claude Code local settings
 .claude/
+rl.config.json
+.opencode/plan/update-readme.md

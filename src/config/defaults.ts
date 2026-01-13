@@ -3,8 +3,8 @@ import type { Config, ToolConfig } from "./schema.js";
 export const DEFAULT_TOOL_CONFIGS: Record<string, ToolConfig> = {
 	"claude-code": {
 		command: "claude",
-		model: "claude-sonnet-4-20250514",
-		template: "cat {promptFile} | claude",
+		model: "anthropic/claude-sonnet-4-5",
+		template: "claude --allowedTools Edit,Write,Bash,Read,Glob,Grep --print < {promptFile}",
 	},
 	opencode: {
 		command: "opencode",
@@ -13,7 +13,7 @@ export const DEFAULT_TOOL_CONFIGS: Record<string, ToolConfig> = {
 	},
 	cursor: {
 		command: "cursor",
-		model: "claude-sonnet-4-20250514",
+		model: "sonnet",
 		template: "cursor agent --prompt-file {promptFile}",
 	},
 	codex: {

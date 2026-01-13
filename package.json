@@ -1,6 +1,6 @@
 {
 	"name": "ralphlike",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "AI coding loop CLI tool implementing the Ralph method",
 	"type": "module",
 	"main": "dist/cli.js",

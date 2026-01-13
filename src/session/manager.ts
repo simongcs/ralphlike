@@ -9,6 +9,7 @@ export interface SessionInfo {
 	progressFile: string;
 	checklistFile: string;
 	originalPromptCopy: string;
+	isResumed: boolean;
 }
 
 export interface CreateSessionOptions {
@@ -81,6 +82,77 @@ export class SessionManager {
 			progressFile: progressPath,
 			checklistFile: checklistPath,
 			originalPromptCopy: promptCopyPath,
+			isResumed: false,
+		};
+	}
+
+	/**
+	 * Get an existing session or create a new one.
+	 * If a session with the derived name already exists, resume it instead of creating a new one.
+	 */
+	async getOrCreateSession(options: CreateSessionOptions): Promise<SessionInfo> {
+		const { promptFile, sessionName } = options;
+		const absolutePromptPath = resolve(process.cwd(), promptFile);
+
+		if (!existsSync(absolutePromptPath)) {
+			throw new Error(`Prompt file not found: ${absolutePromptPath}`);
+		}
+
+		// Determine session name
+		let name = sessionName;
+		if (!name) {
+			name = deriveSessionName(promptFile);
+		}
+
+		// If still no name (generic filename), generate timestamp-based name
+		if (!name) {
+			const now = new Date();
+			const timestamp = now.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+			name = `session-${timestamp}`;
+		}
+
+		// Check if session already exists - if so, resume it
+		this.ensureRalphDir();
+		const sessionDir = join(this.ralphDir, name);
+
+		if (existsSync(sessionDir)) {
+			// Resume existing session
+			const checklistPath = join(sessionDir, "checklist.md");
+			const progressPath = join(sessionDir, "progress.md");
+			const promptCopyPath = join(sessionDir, "prompt.md");
+
+			return {
+				name,
+				dir: sessionDir,
+				promptFile: absolutePromptPath,
+				progressFile: progressPath,
+				checklistFile: checklistPath,
+				originalPromptCopy: promptCopyPath,
+				isResumed: true,
+			};
+		}
+
+		// Create new session
+		mkdirSync(sessionDir, { recursive: true });
+
+		// Copy prompt file
+		const promptCopyPath = join(sessionDir, "prompt.md");
+		copyFileSync(absolutePromptPath, promptCopyPath);
+
+		// Checklist will be created by the agent on first run
+		const checklistPath = join(sessionDir, "checklist.md");
+
+		// Create empty progress file
+		const progressPath = join(sessionDir, "progress.md");
+
+		return {
+			name,
+			dir: sessionDir,
+			promptFile: absolutePromptPath,
+			progressFile: progressPath,
+			checklistFile: checklistPath,
+			originalPromptCopy: promptCopyPath,
+			isResumed: false,
 		};
 	}
 

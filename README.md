@@ -100,10 +100,6 @@ Creates `rl.config.json` with interactive prompts for:
 
   "stopConditions": {
     "maxIterations": true,
-    "doneFile": {
-      "enabled": true,
-      "path": "DONE.md"
-    },
     "outputPattern": {
       "enabled": false,
       "pattern": "## COMPLETE"
@@ -139,9 +135,8 @@ Creates `rl.config.json` with interactive prompts for:
 Stop conditions are evaluated in order after each iteration:
 
 1. **maxIterations** - Always checked first (hard limit)
-2. **doneFile** - Stop when a file exists (e.g., `DONE.md`)
-3. **outputPattern** - Stop when agent output matches regex
-4. **hook** - Stop when custom script returns exit code 0
+2. **outputPattern** - Stop when agent output matches regex
+3. **hook** - Stop when custom script returns exit code 0
 
 ### Lifecycle Hooks
 
@@ -222,7 +217,6 @@ rl prompt-auth.md -mi 10 -t claude-code
 
 4. The loop stops when:
    - Max iterations reached
-   - You create a `DONE.md` file
    - The agent outputs a completion pattern
 
 ## Tips
@@ -230,7 +224,6 @@ rl prompt-auth.md -mi 10 -t claude-code
 - **Start small**: Begin with 3-5 iterations to tune your prompt
 - **Be specific**: Detailed prompts produce better results
 - **Use checkboxes**: Tasks in markdown checkboxes are tracked in checklist.md
-- **Enable done-file**: Create `DONE.md` to stop early when satisfied
 - **Review progress**: Check `.ralph/{session}/progress.md` after runs
 
 ## License

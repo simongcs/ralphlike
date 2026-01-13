@@ -3,7 +3,7 @@
 import chalk from "chalk";
 import { Command } from "commander";
 import { runInit } from "./commands/init.js";
-import { getToolConfig, loadConfig } from "./config/index.js";
+import { formatModelForTool, getToolConfig, loadConfig } from "./config/index.js";
 import { runLoop } from "./loop/index.js";
 import { getAdapter, getAvailableTools } from "./tools/index.js";
 import { createCombinedPrompt } from "./utils/prompt.js";
@@ -49,16 +49,20 @@ program
 			const toolName = options.tool || config.defaultTool;
 			const toolConfig = getToolConfig(config, toolName);
 			const adapter = getAdapter(toolName);
-			const model = options.model || toolConfig.model;
+			// Model precedence: CLI option > config.defaultModel > tool default
+			const modelName = options.model || config.defaultModel || toolConfig.model;
+			const formattedModel = modelName
+				? formatModelForTool(modelName, toolName, config.models)
+				: undefined;
 
 			// Build command for display
-			const command = await adapter.buildCommand(promptFile, toolConfig, model);
+			const command = await adapter.buildCommand(promptFile, toolConfig, formattedModel);
 
 			if (options.verbose || options.dryRun) {
 				console.log(chalk.bold("\nConfiguration:"));
 				console.log(chalk.dim("─".repeat(40)));
 				console.log(`  Tool:           ${chalk.cyan(toolName)}`);
-				console.log(`  Model:          ${chalk.cyan(model || "default")}`);
+				console.log(`  Model:          ${chalk.cyan(modelName || "default")} → ${chalk.dim(formattedModel || "default")}`);
 				console.log(`  Max iterations: ${chalk.cyan(config.maxIterations)}`);
 				console.log(`  Auto-commit:    ${chalk.cyan(config.git.autoCommit && options.commit)}`);
 				console.log(`  Prompt file:    ${chalk.cyan(promptFile)}`);
@@ -105,7 +109,7 @@ program
 				promptFile,
 				config,
 				toolName,
-				model,
+				model: modelName,
 				sessionName: options.name,
 				verbose: options.verbose,
 				autoCommit: options.commit,

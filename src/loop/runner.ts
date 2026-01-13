@@ -1,14 +1,45 @@
 import chalk from "chalk";
 import ora from "ora";
-import { getToolConfig } from "../config/defaults.js";
+import { formatModelForTool, getToolConfig } from "../config/defaults.js";
 import type { Config } from "../config/schema.js";
 import { commit, formatCommitMessage, getGitStatus, isGitRepository } from "../git/index.js";
 import { type SessionInfo, SessionManager } from "../session/manager.js";
 import { ProgressWriter, getFilesChangedCount, getGitDiffSummary } from "../session/progress.js";
-import { type ExecutionResult, getAdapter } from "../tools/index.js";
+import { type ExecutionResult, type TokenUsage, getAdapter, getTokenParser } from "../tools/index.js";
 import { createCombinedPrompt } from "../utils/prompt.js";
 import { type HookEnvironment, HookExecutor } from "./hooks.js";
 import { type StopCheckContext, checkStopConditions, runStopHook } from "./stop.js";
+
+/**
+ * Accumulates token usage across multiple iterations.
+ * Only accumulates fields that are present in the iteration data.
+ */
+function accumulateTokens(total: TokenUsage, iteration: TokenUsage): TokenUsage {
+	return {
+		inputTokens:
+			iteration.inputTokens !== undefined
+				? (total.inputTokens || 0) + iteration.inputTokens
+				: total.inputTokens,
+		outputTokens:
+			iteration.outputTokens !== undefined
+				? (total.outputTokens || 0) + iteration.outputTokens
+				: total.outputTokens,
+		totalTokens:
+			iteration.totalTokens !== undefined
+				? (total.totalTokens || 0) + iteration.totalTokens
+				: total.totalTokens,
+		cacheReadTokens:
+			iteration.cacheReadTokens !== undefined
+				? (total.cacheReadTokens || 0) + iteration.cacheReadTokens
+				: total.cacheReadTokens,
+		cacheWriteTokens:
+			iteration.cacheWriteTokens !== undefined
+				? (total.cacheWriteTokens || 0) + iteration.cacheWriteTokens
+				: total.cacheWriteTokens,
+		cost:
+			iteration.cost !== undefined ? (total.cost || 0) + iteration.cost : total.cost,
+	};
+}
 
 export interface RunOptions {
 	promptFile: string;
@@ -67,7 +98,11 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 	// Get tool adapter and config
 	const adapter = getAdapter(toolName);
 	const toolConfig = getToolConfig(config, toolName);
-	const effectiveModel = model || toolConfig.model;
+	// Model precedence: CLI option > config.defaultModel (optional) > tool default
+	const modelName = model || config.defaultModel || toolConfig.model;
+	const effectiveModel = modelName
+		? formatModelForTool(modelName, toolName, config.models)
+		: undefined;
 
 	// Check tool availability
 	const isAvailable = await adapter.isAvailable();
@@ -75,14 +110,18 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 		throw new Error(`Tool '${toolName}' is not installed or not in PATH`);
 	}
 
-	// Create session
+	// Get or resume session
 	const sessionManager = new SessionManager();
-	const session = await sessionManager.createSession({
+	const session = await sessionManager.getOrCreateSession({
 		promptFile,
 		sessionName,
 	});
 
-	console.log(chalk.dim(`\nSession: ${session.name}`));
+	if (session.isResumed) {
+		console.log(chalk.cyan(`\nResuming session: ${session.name}`));
+	} else {
+		console.log(chalk.dim(`\nSession: ${session.name}`));
+	}
 	console.log(chalk.dim(`Directory: ${session.dir}`));
 	if (shouldAutoCommit && isGitRepo) {
 		console.log(chalk.dim(`Auto-commit: ${config.git.commitStrategy}`));
@@ -97,6 +136,7 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 		tool: toolName,
 		model: effectiveModel || "default",
 		maxIterations: config.maxIterations,
+		isResumed: session.isResumed,
 	});
 
 	// Initialize hook executor
@@ -121,9 +161,13 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 		// Build command using the combined prompt file
 		const command = await adapter.buildCommand(combinedPrompt.filePath, toolConfig, effectiveModel);
 
+		// Get token parser for this tool
+		const parseTokens = getTokenParser(toolName);
+
 		let iteration = 0;
 		let stopReason = "unknown";
 		let lastOutput = "";
+		let totalTokens: TokenUsage = {};
 
 		// Main loop
 		while (iteration < config.maxIterations) {
@@ -178,6 +222,12 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 				break;
 			}
 
+			// Parse token usage from output
+			const iterationTokens = parseTokens(lastOutput);
+			if (iterationTokens) {
+				totalTokens = accumulateTokens(totalTokens, iterationTokens);
+			}
+
 			// Record progress
 			const filesChanged = await getFilesChangedCount();
 			const diffSummary = await getGitDiffSummary();
@@ -190,6 +240,7 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 				exitCode: result.exitCode,
 				filesChanged,
 				diffSummary,
+				tokens: iterationTokens || undefined,
 			});
 
 			// Run post-iteration hook
@@ -248,11 +299,17 @@ export async function runLoop(options: RunOptions): Promise<RunResult> {
 			await performCommit(iteration, session.name, config.git.commitMessageTemplate, toolName);
 		}
 
-		// Write summary
+		// Write summary (include total tokens if we captured any)
+		const hasTotalTokens =
+			totalTokens.inputTokens !== undefined ||
+			totalTokens.outputTokens !== undefined ||
+			totalTokens.totalTokens !== undefined;
+
 		progressWriter.writeSummary({
 			totalIterations: iteration,
 			stopReason,
 			totalDuration: progressWriter.getElapsedTime(),
+			totalTokens: hasTotalTokens ? totalTokens : undefined,
 		});
 
 		// Run completion hook

@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { DEFAULT_CONFIG } from "../config/defaults.js";
+import { DEFAULT_CONFIG, DEFAULT_TOOL_CONFIGS } from "../config/defaults.js";
 import { configExists, writeConfig } from "../config/loader.js";
 import type { Config, ToolName } from "../config/schema.js";
 import { getAllToolNames, getAvailableTools } from "../tools/index.js";
@@ -8,7 +8,6 @@ import { getAllToolNames, getAvailableTools } from "../tools/index.js";
 interface InitAnswers {
 	defaultTool: ToolName;
 	maxIterations: number;
-	enableDoneFile: boolean;
 	autoCommit: boolean;
 	commitStrategy?: "per-iteration" | "on-stop";
 	errorStrategy: "stop" | "retry-once" | "continue";
@@ -65,12 +64,6 @@ export async function runInit(): Promise<void> {
 		},
 		{
 			type: "confirm",
-			name: "enableDoneFile",
-			message: "Enable done-file stop condition? (creates DONE.md to stop)",
-			default: false,
-		},
-		{
-			type: "confirm",
 			name: "autoCommit",
 			message: "Enable auto-commit after iterations?",
 			default: false,
@@ -99,17 +92,21 @@ export async function runInit(): Promise<void> {
 		},
 	]);
 
+	// Build tools config with defaults so user can customize
+	const toolsConfig: Config["tools"] = {};
+	for (const [toolName, toolConfig] of Object.entries(DEFAULT_TOOL_CONFIGS)) {
+		toolsConfig[toolName as keyof Config["tools"]] = {
+			command: toolConfig.command,
+			model: toolConfig.model,
+			template: toolConfig.template,
+		};
+	}
+
 	const config: Config = {
 		...DEFAULT_CONFIG,
 		defaultTool: answers.defaultTool,
 		maxIterations: answers.maxIterations,
-		stopConditions: {
-			...DEFAULT_CONFIG.stopConditions,
-			doneFile: {
-				enabled: answers.enableDoneFile,
-				path: "DONE.md",
-			},
-		},
+		tools: toolsConfig,
 		git: {
 			...DEFAULT_CONFIG.git,
 			autoCommit: answers.autoCommit,

@@ -1,5 +1,7 @@
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import type { SessionInfo } from "./manager.js";
+import type { TokenUsage } from "../tools/tokens.js";
+import { formatTokenUsage } from "../tools/tokens.js";
 
 export interface ProgressHeader {
 	sessionName: string;
@@ -7,6 +9,7 @@ export interface ProgressHeader {
 	tool: string;
 	model: string;
 	maxIterations: number;
+	isResumed?: boolean;
 }
 
 export interface IterationProgress {
@@ -17,12 +20,14 @@ export interface IterationProgress {
 	filesChanged?: number;
 	diffSummary?: string;
 	exitCode: number;
+	tokens?: TokenUsage;
 }
 
 export interface SessionSummary {
 	totalIterations: number;
 	stopReason: string;
 	totalDuration: number;
+	totalTokens?: TokenUsage;
 }
 
 export class ProgressWriter {
@@ -35,6 +40,22 @@ export class ProgressWriter {
 	}
 
 	writeHeader(header: ProgressHeader): void {
+		// If resuming and progress file exists, append a resume marker instead of overwriting
+		if (header.isResumed && existsSync(this.session.progressFile)) {
+			const lines = [
+				"",
+				"---",
+				"",
+				`## Resumed: ${header.startTime.toISOString().replace("T", " ").slice(0, 19)}`,
+				`Tool: ${header.tool}`,
+				`Model: ${header.model}`,
+				`Max Iterations: ${header.maxIterations}`,
+				"",
+			];
+			appendFileSync(this.session.progressFile, lines.join("\n"), "utf-8");
+			return;
+		}
+
 		const lines = [
 			`# Session: ${header.sessionName}`,
 			`Started: ${header.startTime.toISOString().replace("T", " ").slice(0, 19)}`,
@@ -60,6 +81,10 @@ export class ProgressWriter {
 			`- Exit code: ${progress.exitCode}`,
 		];
 
+		if (progress.tokens) {
+			lines.push(`- Tokens: ${formatTokenUsage(progress.tokens)}`);
+		}
+
 		if (progress.filesChanged !== undefined) {
 			lines.push(`- Files changed: ${progress.filesChanged}`);
 		}
@@ -83,8 +108,13 @@ export class ProgressWriter {
 			`Total iterations: ${summary.totalIterations}`,
 			`Stop reason: ${summary.stopReason}`,
 			`Duration: ${durationMin}m`,
-			"",
 		];
+
+		if (summary.totalTokens) {
+			lines.push(`Total tokens: ${formatTokenUsage(summary.totalTokens)}`);
+		}
+
+		lines.push("");
 
 		appendFileSync(this.session.progressFile, lines.join("\n"), "utf-8");
 	}

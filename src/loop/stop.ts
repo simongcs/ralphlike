@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import type { StopConditions } from "../config/schema.js";
 
 export interface StopCheckContext {
@@ -26,18 +24,7 @@ export function checkStopConditions(
 		};
 	}
 
-	// 2. Done file
-	if (conditions.doneFile.enabled) {
-		const donePath = resolve(context.workingDir, conditions.doneFile.path);
-		if (existsSync(donePath)) {
-			return {
-				shouldStop: true,
-				reason: `Done file detected: ${conditions.doneFile.path}`,
-			};
-		}
-	}
-
-	// 3. Output pattern
+	// 2. Output pattern
 	if (conditions.outputPattern.enabled && conditions.outputPattern.pattern) {
 		const regex = new RegExp(conditions.outputPattern.pattern);
 		if (regex.test(context.output)) {
@@ -48,7 +35,7 @@ export function checkStopConditions(
 		}
 	}
 
-	// 4. Hook (checked separately via runStopHook)
+	// 3. Hook (checked separately via runStopHook)
 	// Hook execution is async and handled in the runner
 
 	return { shouldStop: false };

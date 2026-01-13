@@ -5,6 +5,8 @@ import { CursorAdapter } from "./cursor.js";
 import { OpenCodeAdapter } from "./opencode.js";
 
 export type { ToolAdapter, ExecutionResult } from "./adapter.js";
+export type { TokenUsage, TokenParser } from "./tokens.js";
+export { getTokenParser, formatTokenUsage } from "./tokens.js";
 
 const adapters: Record<string, ToolAdapter> = {
 	"claude-code": new ClaudeCodeAdapter(),

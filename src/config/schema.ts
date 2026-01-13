@@ -8,12 +8,6 @@ export const ToolConfigSchema = z.object({
 
 export const StopConditionsSchema = z.object({
 	maxIterations: z.boolean().default(true),
-	doneFile: z
-		.object({
-			enabled: z.boolean().default(false),
-			path: z.string().default("DONE.md"),
-		})
-		.default({}),
 	outputPattern: z
 		.object({
 			enabled: z.boolean().default(false),
@@ -50,8 +44,14 @@ export const SessionConfigSchema = z.object({
 	progressVerbosity: z.enum(["minimal", "standard", "full"]).default("standard"),
 });
 
+export const ModelDefinitionSchema = z.object({
+	id: z.string(),
+	provider: z.enum(["anthropic", "openai", "google", "cursor", "other"]).default("other"),
+});
+
 export const ConfigSchema = z.object({
 	defaultTool: z.enum(["claude-code", "opencode", "cursor", "codex"]).default("claude-code"),
+	defaultModel: z.string().optional(),
 	maxIterations: z.number().int().min(1).max(1000).default(10),
 	tools: z
 		.object({
@@ -66,6 +66,7 @@ export const ConfigSchema = z.object({
 	errorHandling: ErrorHandlingSchema.default({}),
 	git: GitConfigSchema.default({}),
 	session: SessionConfigSchema.default({}),
+	models: z.record(z.string(), ModelDefinitionSchema).default({}),
 });
 
 export type ToolConfig = z.infer<typeof ToolConfigSchema>;
@@ -74,6 +75,7 @@ export type Hooks = z.infer<typeof HooksSchema>;
 export type ErrorHandling = z.infer<typeof ErrorHandlingSchema>;
 export type GitConfig = z.infer<typeof GitConfigSchema>;
 export type SessionConfig = z.infer<typeof SessionConfigSchema>;
+export type ModelDefinition = z.infer<typeof ModelDefinitionSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
 export type ToolName = "claude-code" | "opencode" | "cursor" | "codex";

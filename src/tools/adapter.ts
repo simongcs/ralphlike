@@ -2,12 +2,14 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ToolConfig } from "../config/schema.js";
+import type { TokenUsage } from "./tokens.js";
 
 export interface ExecutionResult {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 	duration: number;
+	tokens?: TokenUsage;
 }
 
 export interface ToolAdapter {
@@ -91,17 +93,35 @@ export abstract class BaseToolAdapter implements ToolAdapter {
 		const startTime = Date.now();
 
 		return new Promise((resolve) => {
-			// Use full inherit for interactive tools (Claude Code needs TTY access)
+			// Use pipe for stdout/stderr to capture output while streaming to console
+			// This allows us to capture token usage while still showing real-time output
 			const child = spawn("sh", ["-c", command], {
-				stdio: ["inherit", "inherit", "inherit"],
+				stdio: ["inherit", "pipe", "pipe"],
 				cwd: process.cwd(),
+			});
+
+			let stdout = "";
+			let stderr = "";
+
+			// Stream stdout to console while capturing
+			child.stdout?.on("data", (data: Buffer) => {
+				const text = data.toString();
+				stdout += text;
+				process.stdout.write(data);
+			});
+
+			// Stream stderr to console while capturing
+			child.stderr?.on("data", (data: Buffer) => {
+				const text = data.toString();
+				stderr += text;
+				process.stderr.write(data);
 			});
 
 			child.on("close", (code) => {
 				resolve({
 					exitCode: code ?? 1,
-					stdout: "",
-					stderr: "",
+					stdout,
+					stderr,
 					duration: Date.now() - startTime,
 				});
 			});
@@ -109,8 +129,8 @@ export abstract class BaseToolAdapter implements ToolAdapter {
 			child.on("error", (error) => {
 				resolve({
 					exitCode: 1,
-					stdout: "",
-					stderr: error.message,
+					stdout,
+					stderr: stderr + error.message,
 					duration: Date.now() - startTime,
 				});
 			});

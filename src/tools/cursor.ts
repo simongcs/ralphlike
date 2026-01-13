@@ -4,6 +4,6 @@ export class CursorAdapter extends BaseToolAdapter {
 	name = "cursor";
 
 	getCommandName(): string {
-		return "cursor";
+		return "agent";
 	}
 }

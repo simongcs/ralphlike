@@ -88,13 +88,23 @@ Creates `rl.config.json` with interactive prompts for:
   "tools": {
     "claude-code": {
       "command": "claude",
-      "model": "claude-sonnet-4-20250514",
-      "template": "cat {promptFile} | claude"
+      "model": "claude-sonnet-4.5",
+      "template": "claude --model {model} --allowedTools Edit,Write,Bash,Read,Glob,Grep --print < {promptFile}"
     },
     "opencode": {
       "command": "opencode",
-      "model": "gpt-4o",
-      "template": "opencode --file {promptFile}"
+      "model": "gemini-3-flash",
+      "template": "opencode run --model {model} < {promptFile}"
+    },
+    "cursor": {
+      "command": "agent",
+      "model": "composer-1",
+      "template": "agent -f --model {model} -p \"$(cat {promptFile})\""
+    },
+    "codex": {
+      "command": "codex",
+      "model": "gpt-5.1-codex-mini",
+      "template": "codex -m {model} exec --skip-git-repo-check --full-auto \"$(cat {promptFile})\""
     }
   },
 
@@ -105,16 +115,8 @@ Creates `rl.config.json` with interactive prompts for:
       "pattern": "## COMPLETE"
     },
     "hook": {
-      "enabled": false,
-      "command": "./scripts/check-done.sh"
+      "enabled": false
     }
-  },
-
-  "hooks": {
-    "preIteration": null,
-    "postIteration": null,
-    "onError": null,
-    "onComplete": null
   },
 
   "errorHandling": {
@@ -126,7 +128,13 @@ Creates `rl.config.json` with interactive prompts for:
     "autoCommit": false,
     "commitStrategy": "per-iteration",
     "commitMessageTemplate": "rl: iteration {iteration} - {sessionName}"
-  }
+  },
+
+  "session": {
+    "progressVerbosity": "standard"
+  },
+
+  "models": {}
 }
 ```
 
